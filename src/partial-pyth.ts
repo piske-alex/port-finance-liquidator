@@ -37,15 +37,15 @@ async function runPartialLiquidator() {
   const programId = new PublicKey(process.env.PROGRAM_ID || "Port7uDYB3wk6GJAw4KT1WpTeMtSu9bTcChBHkX2LfR")
 
   // liquidator's keypair
-  const keyPairPath = process.env.KEYPAIR || `${homedir()}/.config/solana/id.json`
-  const payer = new Account(JSON.parse(fs.readFileSync(keyPairPath, 'utf-8')))
+//  const keyPairPath = process.env.KEYPAIR || `${homedir()}/.config/solana/id.json`
+//  const payer = new Account(JSON.parse(fs.readFileSync(keyPairPath, 'utf-8')))
 
   console.log(`Port liquidator launched on cluster=${cluster}`);
 
   const parsedReserveMap = await getParsedReservesMap(connection, programId);
   const wallets: Map<string, { publicKey: PublicKey; tokenAccount: Wallet }> = new Map();
 
-  for (const reserve of parsedReserveMap.values()) {
+  /*for (const reserve of parsedReserveMap.values()) {
     wallets.set(
       reserve.reserve.liquidity.mintPubkey.toBase58(),
       await findLargestTokenAccountForOwner(
@@ -54,19 +54,19 @@ async function runPartialLiquidator() {
       reserve.reserve.collateral.mintPubkey.toBase58(),
       await findLargestTokenAccountForOwner(
         connection, payer, reserve.reserve.collateral.mintPubkey));
-  }
+  }*/
 
   while (true) {
     try {
-      redeemRemainingCollaterals(parsedReserveMap, programId, connection, payer, wallets);
+     // redeemRemainingCollaterals(parsedReserveMap, programId, connection, payer, wallets);
 
       const unhealthyObligations = await getUnhealthyObligations(connection, programId, parsedReserveMap);
-      console.log(`Time: ${new Date()} - payer account ${payer.publicKey.toBase58()}, we have ${unhealthyObligations.length} accounts for liquidation`)
+      console.log(`Time: ${new Date()} , we have ${unhealthyObligations.length} accounts for liquidation`)
       for (const unhealthyObligation of unhealthyObligations) {
         notify(
           `Liquidating obligation account ${unhealthyObligation.obligation.publicKey.toBase58()} which is owned by ${unhealthyObligation.obligation.owner.toBase58()} with risk factor: ${unhealthyObligation.riskFactor}
            which has borrowed ${unhealthyObligation.loanValue} with liquidation borrowed value at ${unhealthyObligation.obligation.unhealthyBorrowValue} ...`)
-        await liquidateAccount(connection, programId, payer, unhealthyObligation.obligation, parsedReserveMap, wallets);
+        // await liquidateAccount(connection, programId, payer, unhealthyObligation.obligation, parsedReserveMap, wallets);
       }
 
     } catch (e) {
