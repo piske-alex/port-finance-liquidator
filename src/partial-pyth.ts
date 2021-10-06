@@ -1,5 +1,6 @@
 import { Account, Connection, PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
 import { homedir } from 'os';
+import redis from 'redis';
 import * as fs from 'fs';
 import { findLargestTokenAccountForOwner, getAllObligations, getParsedReservesMap, scaleToNormalNumber, notify, sleep, STAKING_PROGRAM_ID, TEN, WAD, wadToBN, wadToNumber, Wallet, ZERO } from './utils';
 import { EnrichedObligation, Obligation } from './layouts/obligation';
@@ -55,18 +56,32 @@ async function runPartialLiquidator() {
       await findLargestTokenAccountForOwner(
         connection, payer, reserve.reserve.collateral.mintPubkey));
   }*/
-
+  const client = redis.createClient();
+  if(client) console.log('client created')
+  client.lpush('started', Date.now, redis.print)
   while (true) {
     try {
      // redeemRemainingCollaterals(parsedReserveMap, programId, connection, payer, wallets);
 
-      const unhealthyObligations = await getUnhealthyObligations(connection, programId, parsedReserveMap);
+      const unhealthyObligations = await getUnhealthyObligations(client, connection, programId, parsedReserveMap);
       console.log(`Time: ${new Date()} , we have ${unhealthyObligations.length} accounts for liquidation`)
       for (const unhealthyObligation of unhealthyObligations) {
-        notify(
-          `Liquidating obligation account ${unhealthyObligation.obligation.publicKey.toBase58()} which is owned by ${unhealthyObligation.obligation.owner.toBase58()} with risk factor: ${unhealthyObligation.riskFactor}
-           which has borrowed ${unhealthyObligation.loanValue} with liquidation borrowed value at ${unhealthyObligation.obligation.unhealthyBorrowValue} ...`)
-        // await liquidateAccount(connection, programId, payer, unhealthyObligation.obligation, parsedReserveMap, wallets);
+        try{
+          client.lpush('liquidations', JSON.stringify({
+            obligationAccount: unhealthyObligation.obligation.publicKey.toBase58(),
+            owner: unhealthyObligation.obligation.owner.toBase58(),
+            riskFactor: unhealthyObligation.riskFactor,
+            borrowAmount: unhealthyObligation.loanValue,
+            borrowValue: unhealthyObligation.obligation.unhealthyBorrowValue
+          }), redis.print)
+          notify(
+            `Liquidating obligation account ${unhealthyObligation.obligation.publicKey.toBase58()} which is owned by ${unhealthyObligation.obligation.owner.toBase58()} with risk factor: ${unhealthyObligation.riskFactor}
+             which has borrowed ${unhealthyObligation.loanValue} with liquidation borrowed value at ${unhealthyObligation.obligation.unhealthyBorrowValue} ...`)
+          // await liquidateAccount(connection, programId, payer, unhealthyObligation.obligation, parsedReserveMap, wallets);
+        } catch(e){
+          console.log(e)
+        }
+        
       }
 
     } catch (e) {
@@ -121,7 +136,7 @@ async function readTokenPrices(connection, allReserve: Map<string, EnrichedReser
   return tokenToCurrentPrice
 }
 
-async function getUnhealthyObligations(connection: Connection, programId: PublicKey, allReserve: Map<string, EnrichedReserve>) {
+async function getUnhealthyObligations(redisClient: any, connection: Connection, programId: PublicKey, allReserve: Map<string, EnrichedReserve>) {
   const obligations = await getAllObligations(connection, programId)
   const tokenToCurrentPrice = await readTokenPrices(connection, allReserve);
   const sortedObligations =  obligations
@@ -134,6 +149,7 @@ async function getUnhealthyObligations(connection: Connection, programId: Public
     );
 
   console.log(`Total number of loans are: ${sortedObligations.length}`)
+  redisClient.set('numberOfLoans', sortedObligations.length)
   sortedObligations.slice(0, DISPLAY_FIRST).forEach(
     ob => console.log(
 `Risk factor: ${ob.riskFactor.toFixed(4)} borrowed amount: ${scaleToNormalNumber(ob.loanValue, 10)} deposit amount: ${scaleToNormalNumber(ob.collateralValue, 10)}
